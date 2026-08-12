@@ -41,17 +41,16 @@ def test_healthz() -> None:
     }
 
 
-def test_demo_transitions_are_fail_closed() -> None:
+def test_read_only_demo_stages_never_create_approval() -> None:
     stage_zero = client.get("/api/v1/demo/0").json()["report"]
     stage_one = client.get("/api/v1/demo/1").json()["report"]
-    stage_two = client.get("/api/v1/demo/2").json()["report"]
 
     assert stage_zero["status"] == "BLOCKED"
     assert stage_one["status"] == "AWAITING_APPROVAL"
-    assert stage_two["status"] == "READY_FOR_HUMAN_ACTION"
+    assert client.get("/api/v1/demo/2").status_code == 404
     assert all(
         report["external_action_executed"] is False
-        for report in (stage_zero, stage_one, stage_two)
+        for report in (stage_zero, stage_one)
     )
 
 
@@ -110,7 +109,7 @@ def test_synthetic_approval_preserves_packet_fingerprint() -> None:
 
 def test_synthetic_approval_rejects_unknown_run() -> None:
     response = client.post(
-        "/api/v1/workflows/demo-audit-00000000000000000000000000000000/"
+        "/api/v1/workflows/demo-audit-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
         "synthetic-approval",
         headers=WORKFLOW_HEADERS,
     )

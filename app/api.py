@@ -26,7 +26,7 @@ from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.demo import build_demo_packet, trusted_demo_evidence_ids
-from app.gate import GatePacket, GateReport, approval_scope, evaluate_packet
+from app.gate import GatePacket, GateReport, evaluate_packet
 from app.workflow import (
     WorkflowCapacityError,
     execute_demo_workflow,
@@ -230,8 +230,10 @@ def evaluate_gate(packet: GatePacket) -> GateReport:
 
 @router.get("/api/v1/demo/{stage}")
 def demo_stage(stage: int) -> dict[str, object]:
-    """Return a synthetic transition from blocked to human-action ready."""
+    """Return a synthetic pre-approval state without creating authority."""
 
+    if stage not in {0, 1}:
+        raise HTTPException(status_code=404, detail="demo stage must be 0 or 1")
     try:
         packet = build_demo_packet(stage)
     except ValueError as exc:
@@ -241,7 +243,6 @@ def demo_stage(stage: int) -> dict[str, object]:
         "report": evaluate_packet(
             packet,
             trusted_evidence_ids=trusted_demo_evidence_ids(packet),
-            verified_approval_scope=(approval_scope(packet) if stage == 2 else None),
         ).model_dump(mode="json"),
     }
 
@@ -329,7 +330,7 @@ def approve_demo_workflow(
     request: Request,
     run_id: Annotated[
         str,
-        ApiPath(pattern=r"^demo-audit-[0-9a-f]{32}$"),
+        ApiPath(pattern=r"^demo-audit-[a-z]{32}$"),
     ],
     workflow_intent: Annotated[
         str | None,

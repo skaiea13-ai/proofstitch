@@ -3,7 +3,7 @@ flowchart LR
     C --> D[Dashboard and bounded REST API]
     D --> W[Server-built synthetic workflow]
     D -->|Fixed prompt only| A[Google ADK Runner]
-    A --> G[Gemini 3.6 Flash on Vertex AI]
+    A --> G[Gemini 3.6 Flash via Developer API Free tier]
     A --> T[One fixed non-executing tool]
     W --> E[Trusted synthetic evidence collector]
     X[Caller-supplied packet] -->|Evidence untrusted by default| H

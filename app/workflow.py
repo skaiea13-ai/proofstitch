@@ -61,6 +61,7 @@ class WorkflowCapacityError(RuntimeError):
 
 _MAX_RUNS = 32
 _RUN_TTL_SECONDS = 15 * 60
+_RUN_ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 _RUNS: OrderedDict[str, tuple[float, WorkflowRun]] = OrderedDict()
 _RUNS_LOCK = RLock()
 
@@ -115,7 +116,8 @@ def execute_demo_workflow(*, now: datetime | None = None) -> WorkflowRun:
     """Run the safe evidence workflow and stop at the human-approval boundary."""
 
     observed_at = now or datetime.now(UTC)
-    run_id = f"demo-audit-{secrets.token_hex(16)}"
+    run_id_suffix = "".join(secrets.choice(_RUN_ID_ALPHABET) for _ in range(32))
+    run_id = f"demo-audit-{run_id_suffix}"
     packet = build_demo_packet(1, now=observed_at, run_id=run_id)
     report = evaluate_packet(
         packet,

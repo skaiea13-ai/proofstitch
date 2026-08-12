@@ -19,11 +19,37 @@ if [[ -n "${PROOFSTITCH_MODEL_DEMO_TOKEN:-}" ]]; then
   printf 'raw model demo token leaked to gcloud child environment\n' >&2
   exit 65
 fi
+if [[ -n "${PROOFSTITCH_SERVICE_ACCOUNT:-}" || -n "${runtime_service_account:-}" ]]; then
+  printf 'raw runtime service account leaked to gcloud child environment\n' >&2
+  exit 65
+fi
+for internal_name in model_demo_token gemini_secret_id gemini_secret_version; do
+  if [[ -n "${!internal_name:-}" ]]; then
+    printf 'internal deployment input leaked to gcloud child environment\n' >&2
+    exit 65
+  fi
+done
+if [[ -n "${GOOGLE_API_KEY:-}" || -n "${GEMINI_API_KEY:-}" ]]; then
+  printf 'raw Gemini API key leaked to gcloud child environment\n' >&2
+  exit 65
+fi
 printf '%s\n' "$*" >>"${FAKE_GCLOUD_LOG:?}"
 
 case "${1:-} ${2:-} ${3:-}" in
   "projects describe proofstitch-security-test")
     printf '%s\n' '123456789012'
+    ;;
+  "secrets describe proofstitch-gemini-api-key")
+    if [[ "${FAKE_SECRET_DESCRIBE_FAIL:-0}" == "1" ]]; then
+      exit 72
+    fi
+    printf '%s\n' 'projects/123456789012/secrets/proofstitch-gemini-api-key'
+    ;;
+  "secrets versions describe")
+    if [[ "${FAKE_SECRET_VERSION_DESCRIBE_FAIL:-0}" == "1" ]]; then
+      exit 73
+    fi
+    printf '%s\n' "${FAKE_SECRET_VERSION_STATE:-ENABLED}"
     ;;
   "run services list")
     if [[ -f "${FAKE_SERVICE_DELETE_ATTEMPTED:?}" && "${FAKE_SERVICE_LIST_FAIL_AFTER_DELETE:-0}" == "1" ]]; then
@@ -171,6 +197,16 @@ if [[ -n "${PROOFSTITCH_MODEL_DEMO_TOKEN:-}" ]]; then
   printf 'raw model demo token leaked to curl child environment\n' >&2
   exit 65
 fi
+if [[ -n "${PROOFSTITCH_SERVICE_ACCOUNT:-}" || -n "${runtime_service_account:-}" ]]; then
+  printf 'raw runtime service account leaked to curl child environment\n' >&2
+  exit 65
+fi
+for internal_name in model_demo_token gemini_secret_id gemini_secret_version; do
+  if [[ -n "${!internal_name:-}" ]]; then
+    printf 'internal deployment input leaked to curl child environment\n' >&2
+    exit 65
+  fi
+done
 printf '%s\n' "$*" >>"${FAKE_CURL_LOG:?}"
 count=0
 if [[ -f "${FAKE_CURL_COUNT:?}" ]]; then
@@ -201,6 +237,17 @@ def _run_deploy(
     token_troubleshoot_json: str = "",
     service_delete_fail: bool = False,
     service_list_fail_after_delete: bool = False,
+    runtime_service_account: str = (
+        "proofstitch-runtime@proofstitch-security-test.iam.gserviceaccount.com"
+    ),
+    gemini_secret: str = "proofstitch-gemini-api-key",
+    gemini_secret_version: str = "1",
+    gemini_free_tier_confirmed: str = "YES",
+    raw_google_api_key: str | None = None,
+    secret_describe_fail: bool = False,
+    secret_version_describe_fail: bool = False,
+    secret_version_state: str = "ENABLED",
+    exported_internal_names: bool = False,
 ) -> tuple[subprocess.CompletedProcess[str], str, str]:
     fake_gcloud = tmp_path / "gcloud"
     fake_gcloud.write_text(_FAKE_GCLOUD, encoding="utf-8")
@@ -210,15 +257,18 @@ def _run_deploy(
     fake_curl.chmod(0o755)
     gcloud_log = tmp_path / "gcloud.log"
     curl_log = tmp_path / "curl.log"
-    env = {
+    env: dict[str, str] = {
         **os.environ,
         "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
         "PROOFSTITCH_PROJECT_ID": "proofstitch-security-test",
         "PROOFSTITCH_REGION": "us-central1",
         "PROOFSTITCH_TASKS_LOCATION": "us-central1",
-        "PROOFSTITCH_SERVICE_ACCOUNT": "runtime@example.invalid",
+        "PROOFSTITCH_SERVICE_ACCOUNT": runtime_service_account,
         "PROOFSTITCH_DEPLOY_CONFIRM": "DEPLOY_PRIVATE",
         "PROOFSTITCH_NO_COST_CONFIRMED": "YES",
+        "PROOFSTITCH_GEMINI_FREE_TIER_CONFIRMED": gemini_free_tier_confirmed,
+        "PROOFSTITCH_GEMINI_SECRET": gemini_secret,
+        "PROOFSTITCH_GEMINI_SECRET_VERSION": gemini_secret_version,
         "PROOFSTITCH_MODEL_DEMO_TOKEN": model_demo_token,
         "FAKE_GCLOUD_LOG": str(gcloud_log),
         "FAKE_CURL_LOG": str(curl_log),
@@ -242,11 +292,28 @@ def _run_deploy(
         "FAKE_SERVICE_LIST_FAIL_AFTER_DELETE": (
             "1" if service_list_fail_after_delete else "0"
         ),
+        "FAKE_SECRET_DESCRIBE_FAIL": "1" if secret_describe_fail else "0",
+        "FAKE_SECRET_VERSION_DESCRIBE_FAIL": (
+            "1" if secret_version_describe_fail else "0"
+        ),
+        "FAKE_SECRET_VERSION_STATE": secret_version_state,
         "PROOFSTITCH_CLEANUP_POLL_ATTEMPTS": "2",
         "PROOFSTITCH_CLEANUP_POLL_INTERVAL_SECONDS": "0",
         "PROOFSTITCH_IAM_POLL_ATTEMPTS": "2",
         "PROOFSTITCH_IAM_POLL_INTERVAL_SECONDS": "0",
     }
+    env.pop("GOOGLE_API_KEY", None)
+    env.pop("GEMINI_API_KEY", None)
+    if raw_google_api_key is not None:
+        env["GOOGLE_API_KEY"] = raw_google_api_key
+    if exported_internal_names:
+        for internal_name in (
+            "model_demo_token",
+            "runtime_service_account",
+            "gemini_secret_id",
+            "gemini_secret_version",
+        ):
+            env[internal_name] = "ambient-sentinel"
     result = subprocess.run(
         [str(DEPLOY_SCRIPT)],
         cwd=REPO_ROOT,
@@ -311,7 +378,10 @@ def _run_cleanup(
 
 
 def test_private_deploy_establishes_bounded_private_lifecycle(tmp_path: Path) -> None:
-    result, gcloud_calls, curl_calls = _run_deploy(tmp_path)
+    result, gcloud_calls, curl_calls = _run_deploy(
+        tmp_path,
+        exported_internal_names=True,
+    )
 
     assert result.returncode == 0, result.stderr
     assert "--no-allow-unauthenticated" in gcloud_calls
@@ -319,6 +389,16 @@ def test_private_deploy_establishes_bounded_private_lifecycle(tmp_path: Path) ->
     assert "a" * 64 not in gcloud_calls
     assert hashlib.sha256(("a" * 64).encode("ascii")).hexdigest() in gcloud_calls
     assert "PROOFSTITCH_MODEL_DEMO_TOKEN_SHA256=disabled" in gcloud_calls
+    assert "secrets describe proofstitch-gemini-api-key" in gcloud_calls
+    assert "secrets versions describe 1" in gcloud_calls
+    assert "GOOGLE_GENAI_USE_ENTERPRISE=false" in gcloud_calls
+    assert "GOOGLE_GENAI_USE_VERTEXAI=true" not in gcloud_calls
+    assert "GOOGLE_CLOUD_PROJECT=" not in gcloud_calls
+    assert "GOOGLE_CLOUD_LOCATION=" not in gcloud_calls
+    assert (
+        "--set-secrets=GOOGLE_API_KEY=proofstitch-gemini-api-key:1"
+        in gcloud_calls
+    )
     assert "roles/run.admin" in gcloud_calls
     assert "roles/iam.serviceAccountUser" in gcloud_calls
     assert "service-123456789012@gcp-sa-cloudtasks.iam.gserviceaccount.com" in gcloud_calls
@@ -529,11 +609,119 @@ def test_private_deploy_never_activates_without_verified_cleanup_task(
     assert "run services delete proofstitch" in gcloud_calls
 
 
-def test_private_deploy_rejects_invalid_model_demo_token(tmp_path: Path) -> None:
-    result, gcloud_calls, _ = _run_deploy(tmp_path, model_demo_token="predictable")
+def test_private_deploy_rejects_invalid_credential_inputs_before_child_commands(
+    tmp_path: Path,
+) -> None:
+    cases = [
+        (
+            "predictable",
+            "proofstitch-runtime@proofstitch-security-test.iam.gserviceaccount.com",
+            "64 lowercase hexadecimal characters",
+        ),
+        ("a" * 64, "AIza" + "A" * 35, "runtime service account is invalid"),
+        ("a" * 64, "b" * 64, "runtime service account is invalid"),
+        (
+            "a" * 64,
+            "proofstitch-runtime@another-project.iam.gserviceaccount.com",
+            "runtime service account is invalid",
+        ),
+        (
+            "a" * 64,
+            "proofstitch-cleanup@proofstitch-security-test.iam.gserviceaccount.com",
+            "reserved cleanup identity",
+        ),
+    ]
+
+    for index, (model_demo_token, runtime_service_account, expected_message) in enumerate(
+        cases
+    ):
+        case_path = tmp_path / str(index)
+        case_path.mkdir()
+        result, gcloud_calls, _ = _run_deploy(
+            case_path,
+            model_demo_token=model_demo_token,
+            runtime_service_account=runtime_service_account,
+        )
+
+        assert result.returncode == 2
+        assert expected_message in result.stderr
+        assert gcloud_calls == ""
+
+
+@pytest.mark.parametrize(
+    ("gemini_secret", "gemini_secret_version", "expected_message"),
+    [
+        ("bad/secret", "1", "Secret Manager secret ID is invalid"),
+        ("AIza" + "A" * 35, "1", "Secret Manager secret ID is invalid"),
+        ("proofstitch-gemini-api-key", "latest", "pinned positive integer"),
+    ],
+)
+def test_private_deploy_rejects_unpinned_or_invalid_secret_reference(
+    tmp_path: Path,
+    gemini_secret: str,
+    gemini_secret_version: str,
+    expected_message: str,
+) -> None:
+    result, gcloud_calls, _ = _run_deploy(
+        tmp_path,
+        gemini_secret=gemini_secret,
+        gemini_secret_version=gemini_secret_version,
+    )
 
     assert result.returncode == 2
-    assert "64 lowercase hexadecimal characters" in result.stderr
+    assert expected_message in result.stderr
+    assert gcloud_calls == ""
+
+
+@pytest.mark.parametrize(
+    ("secret_describe_fail", "secret_version_describe_fail", "secret_version_state"),
+    [
+        (True, False, "ENABLED"),
+        (False, True, "ENABLED"),
+        (False, False, "DISABLED"),
+    ],
+)
+def test_private_deploy_rejects_missing_or_disabled_secret_before_mutation(
+    tmp_path: Path,
+    secret_describe_fail: bool,
+    secret_version_describe_fail: bool,
+    secret_version_state: str,
+) -> None:
+    result, gcloud_calls, _ = _run_deploy(
+        tmp_path,
+        secret_describe_fail=secret_describe_fail,
+        secret_version_describe_fail=secret_version_describe_fail,
+        secret_version_state=secret_version_state,
+    )
+
+    assert result.returncode == 2
+    assert "Gemini API key secret" in result.stderr
+    assert "service-accounts create" not in gcloud_calls
+    assert "tasks queues create" not in gcloud_calls
+    assert "run deploy" not in gcloud_calls
+
+
+@pytest.mark.parametrize(
+    ("gemini_free_tier_confirmed", "raw_google_api_key", "expected_message"),
+    [
+        ("NO", None, "Gemini Developer API free tier is not confirmed"),
+        ("YES", "deliberately-set-test-value", "raw Gemini API key"),
+    ],
+)
+def test_private_deploy_rejects_unconfirmed_free_tier_or_raw_api_key(
+    tmp_path: Path,
+    gemini_free_tier_confirmed: str,
+    raw_google_api_key: str | None,
+    expected_message: str,
+) -> None:
+    result, gcloud_calls, _ = _run_deploy(
+        tmp_path,
+        gemini_free_tier_confirmed=gemini_free_tier_confirmed,
+        raw_google_api_key=raw_google_api_key,
+    )
+
+    assert result.returncode == 2
+    assert expected_message in result.stderr
     assert gcloud_calls == ""
 
 

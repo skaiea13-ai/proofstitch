@@ -88,6 +88,9 @@ def test_workflow_store_rejects_capacity_without_evicting(monkeypatch) -> None:
 
 
 def test_workflow_run_ids_are_unpredictable() -> None:
-    workflow = execute_demo_workflow()
+    first = execute_demo_workflow()
+    second = execute_demo_workflow()
 
-    assert re.fullmatch(r"demo-audit-[0-9a-f]{32}", workflow.run_id)
+    assert re.fullmatch(r"demo-audit-[a-z]{32}", first.run_id)
+    assert re.fullmatch(r"demo-audit-[a-z]{32}", second.run_id)
+    assert first.run_id != second.run_id

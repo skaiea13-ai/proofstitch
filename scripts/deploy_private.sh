@@ -14,25 +14,62 @@ iam_poll_interval_seconds="${PROOFSTITCH_IAM_POLL_INTERVAL_SECONDS:-5}"
 : "${PROOFSTITCH_REGION:?Set the Cloud Run region.}"
 : "${PROOFSTITCH_TASKS_LOCATION:?Set the Cloud Tasks location.}"
 : "${PROOFSTITCH_SERVICE_ACCOUNT:?Set the least-privileged runtime service account.}"
+: "${PROOFSTITCH_GEMINI_SECRET:?Set the Secret Manager secret ID for the Gemini API key.}"
+: "${PROOFSTITCH_GEMINI_SECRET_VERSION:?Set a pinned numeric Gemini API key secret version.}"
 : "${PROOFSTITCH_MODEL_DEMO_TOKEN:?Set a fresh 64-character lowercase hexadecimal model demo token.}"
 
+unset model_demo_token runtime_service_account gemini_secret_id gemini_secret_version
+unset cleanup_service_account
 model_demo_token="${PROOFSTITCH_MODEL_DEMO_TOKEN}"
+runtime_service_account="${PROOFSTITCH_SERVICE_ACCOUNT}"
+gemini_secret_id="${PROOFSTITCH_GEMINI_SECRET}"
+gemini_secret_version="${PROOFSTITCH_GEMINI_SECRET_VERSION}"
+unset PROOFSTITCH_SERVICE_ACCOUNT
+unset PROOFSTITCH_GEMINI_SECRET
+unset PROOFSTITCH_GEMINI_SECRET_VERSION
 unset PROOFSTITCH_MODEL_DEMO_TOKEN
+
+if [[ -n "${GOOGLE_API_KEY:-}" || -n "${GEMINI_API_KEY:-}" ]]; then
+  echo "Refusing deployment: unset every raw Gemini API key; provide only a Secret Manager reference." >&2
+  exit 2
+fi
+unset GOOGLE_API_KEY GEMINI_API_KEY
 
 if [[ "${PROOFSTITCH_DEPLOY_CONFIRM:-}" != "DEPLOY_PRIVATE" ]]; then
   echo "Refusing deployment: set PROOFSTITCH_DEPLOY_CONFIRM=DEPLOY_PRIVATE." >&2
   exit 2
 fi
 if [[ "${PROOFSTITCH_NO_COST_CONFIRMED:-}" != "YES" ]]; then
-  echo "Refusing deployment: sponsored credit or free-tier coverage is not confirmed." >&2
+  echo "Refusing deployment: covered Cloud infrastructure cost is not confirmed." >&2
+  exit 2
+fi
+if [[ "${PROOFSTITCH_GEMINI_FREE_TIER_CONFIRMED:-}" != "YES" ]]; then
+  echo "Refusing deployment: the Gemini Developer API free tier is not confirmed." >&2
   exit 2
 fi
 if [[ ! "${model_demo_token}" =~ ^[0-9a-f]{64}$ ]]; then
   echo "Refusing deployment: the model demo token must be 64 lowercase hexadecimal characters." >&2
   exit 2
 fi
+if [[ ! "${gemini_secret_id}" =~ ^proofstitch-[A-Za-z0-9][A-Za-z0-9_-]{0,242}$ ]]; then
+  echo "Refusing deployment: the Secret Manager secret ID is invalid." >&2
+  exit 2
+fi
+if [[ ! "${gemini_secret_version}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Refusing deployment: the Gemini API key secret version must be a pinned positive integer, never latest or an alias." >&2
+  exit 2
+fi
 if [[ ! "${PROOFSTITCH_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
   echo "Refusing deployment: the Google Cloud project ID is invalid." >&2
+  exit 2
+fi
+cleanup_service_account="${cleanup_service_account_id}@${PROOFSTITCH_PROJECT_ID}.iam.gserviceaccount.com"
+if [[ ! "${runtime_service_account}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]@${PROOFSTITCH_PROJECT_ID}\.iam\.gserviceaccount\.com$ ]]; then
+  echo "Refusing deployment: the runtime service account is invalid or not in the dedicated project." >&2
+  exit 2
+fi
+if [[ "${runtime_service_account}" == "${cleanup_service_account}" ]]; then
+  echo "Refusing deployment: the runtime service account cannot use the reserved cleanup identity." >&2
   exit 2
 fi
 if [[ ! "${PROOFSTITCH_REGION}" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] ||
@@ -70,7 +107,6 @@ unset model_demo_token
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd "${script_dir}/.." && pwd)"
-cleanup_service_account="${cleanup_service_account_id}@${PROOFSTITCH_PROJECT_ID}.iam.gserviceaccount.com"
 project_number="$(gcloud projects describe "${PROOFSTITCH_PROJECT_ID}" --format='value(projectNumber)')"
 if [[ ! "${project_number}" =~ ^[0-9]+$ ]]; then
   echo "Refusing deployment: the Google Cloud project number could not be verified." >&2
@@ -82,6 +118,25 @@ cleanup_service_account_identity="serviceAccount:${cleanup_service_account}"
 cleanup_service_account_resource="//iam.googleapis.com/projects/${PROOFSTITCH_PROJECT_ID}/serviceAccounts/${cleanup_service_account}"
 service_resource="//run.googleapis.com/projects/${PROOFSTITCH_PROJECT_ID}/locations/${PROOFSTITCH_REGION}/services/${service_name}"
 delete_api_url="https://run.googleapis.com/v2/projects/${PROOFSTITCH_PROJECT_ID}/locations/${PROOFSTITCH_REGION}/services/${service_name}"
+expected_gemini_secret_resource_by_id="projects/${PROOFSTITCH_PROJECT_ID}/secrets/${gemini_secret_id}"
+expected_gemini_secret_resource_by_number="projects/${project_number}/secrets/${gemini_secret_id}"
+
+if ! gemini_secret_resource="$(gcloud secrets describe "${gemini_secret_id}" \
+  --project="${PROOFSTITCH_PROJECT_ID}" \
+  --format='value(name)' 2>/dev/null)" ||
+  { [[ "${gemini_secret_resource}" != "${expected_gemini_secret_resource_by_id}" ]] &&
+    [[ "${gemini_secret_resource}" != "${expected_gemini_secret_resource_by_number}" ]]; }; then
+  echo "Refusing deployment: the Gemini API key secret could not be verified in the dedicated project." >&2
+  exit 2
+fi
+if ! gemini_secret_state="$(gcloud secrets versions describe "${gemini_secret_version}" \
+  --secret="${gemini_secret_id}" \
+  --project="${PROOFSTITCH_PROJECT_ID}" \
+  --format='value(state)' 2>/dev/null)" ||
+  [[ "${gemini_secret_state}" != "ENABLED" ]]; then
+  echo "Refusing deployment: the pinned Gemini API key secret version is absent or not enabled." >&2
+  exit 2
+fi
 
 existing_service="$(gcloud run services list \
   --project="${PROOFSTITCH_PROJECT_ID}" \
@@ -225,7 +280,7 @@ gcloud run deploy "${service_name}" \
   --project="${PROOFSTITCH_PROJECT_ID}" \
   --region="${PROOFSTITCH_REGION}" \
   --source="${repo_dir}" \
-  --service-account="${PROOFSTITCH_SERVICE_ACCOUNT}" \
+  --service-account="${runtime_service_account}" \
   --no-allow-unauthenticated \
   --invoker-iam-check \
   --ingress=all \
@@ -238,7 +293,8 @@ gcloud run deploy "${service_name}" \
   --cpu-throttling \
   --no-cpu-boost \
   --execution-environment=gen2 \
-  --set-env-vars="GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${PROOFSTITCH_PROJECT_ID},GOOGLE_CLOUD_LOCATION=global,PROOFSTITCH_MODEL_DEMO_TOKEN_SHA256=disabled,PROOFSTITCH_MODEL_DEMO_NOT_BEFORE=0,PROOFSTITCH_MODEL_DEMO_EXPIRES_AT=0" \
+  --set-env-vars="GOOGLE_GENAI_USE_ENTERPRISE=false,PROOFSTITCH_MODEL_DEMO_TOKEN_SHA256=disabled,PROOFSTITCH_MODEL_DEMO_NOT_BEFORE=0,PROOFSTITCH_MODEL_DEMO_EXPIRES_AT=0" \
+  --set-secrets="GOOGLE_API_KEY=${gemini_secret_id}:${gemini_secret_version}" \
   --quiet >/dev/null
 
 gcloud run services add-iam-policy-binding "${service_name}" \

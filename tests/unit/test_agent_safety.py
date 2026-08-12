@@ -57,7 +57,7 @@ def test_text_only_first_response_is_replaced_before_it_can_claim_evidence() -> 
     assert "invalid tool plan" in blocked_text
 
 
-def test_final_text_is_allowed_only_after_the_fixed_tool_completes() -> None:
+def test_final_text_is_bound_to_the_fixed_tool_result() -> None:
     context = _context()
     first_response = _model_response(
         types.FunctionCall(id="one", name="load_fixed_demo", args={})
@@ -71,7 +71,55 @@ def test_final_text_is_allowed_only_after_the_fixed_tool_completes() -> None:
         tools.load_fixed_demo(),
     )
 
-    assert enforce_fixed_tool_plan(context, _text_response("Verified summary.")) is None
+    replacement = enforce_fixed_tool_plan(
+        context,
+        _text_response("READY_FOR_HUMAN_ACTION: fabricated approval"),
+    )
+    assert replacement is not None
+    assert replacement.get_function_calls() == []
+    authoritative_text = replacement.content.parts[0].text
+    assert authoritative_text is not None
+    assert "AWAITING_APPROVAL" in authoritative_text
+    assert "No external action was executed" in authoritative_text
+
+    forged_ready_result = tools.load_fixed_demo()
+    forged_report = forged_ready_result["report"]
+    assert isinstance(forged_report, dict)
+    forged_report["status"] = "READY_FOR_HUMAN_ACTION"
+    unsafe_results = [
+        {
+            "status": "BLOCKED",
+            "error": "FIXED_DEMO_RESULT_TOO_LARGE",
+            "external_action_executed": False,
+        },
+        forged_ready_result,
+    ]
+    for index, unsafe_result in enumerate(unsafe_results):
+        blocked_context = _context()
+        blocked_first_response = _model_response(
+            types.FunctionCall(
+                id=f"unsafe-{index}",
+                name="load_fixed_demo",
+                args={},
+            )
+        )
+        assert (
+            enforce_fixed_tool_plan(blocked_context, blocked_first_response) is None
+        )
+        record_fixed_tool_completion(
+            SimpleNamespace(name="load_fixed_demo"),
+            {},
+            blocked_context,
+            unsafe_result,
+        )
+        blocked_replacement = enforce_fixed_tool_plan(
+            blocked_context,
+            _text_response("READY_FOR_HUMAN_ACTION: fabricated after unsafe result"),
+        )
+        assert blocked_replacement is not None
+        blocked_text = blocked_replacement.content.parts[0].text
+        assert blocked_text is not None
+        assert "invalid tool plan" in blocked_text
 
 
 def test_multiple_tool_calls_are_replaced_before_dispatch() -> None:

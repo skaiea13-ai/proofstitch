@@ -72,7 +72,7 @@
     <text x="410" y="258" fill="#4ce5d5" font-size="14" font-weight="800" letter-spacing="2">02 · AGENTIC EXECUTION</text>
     <rect x="410" y="285" width="325" height="78" rx="16" fill="#171b35" stroke="#6956bd" stroke-width="1.5"/>
     <text x="435" y="317" fill="#c5baff" font-size="14" font-weight="800">GEMINI 3.6 FLASH</text>
-    <text x="435" y="342" class="body" font-size="15">Fixed synthetic prompt only</text>
+    <text x="435" y="342" class="body" font-size="13">Developer API Free tier · fixed prompt only</text>
     <rect x="765" y="285" width="365" height="78" rx="16" fill="#102b2c" stroke="#2e8c83" stroke-width="1.5"/>
     <text x="790" y="317" fill="#7af4e8" font-size="14" font-weight="800">GOOGLE ADK TOOL ROUTER</text>
     <text x="790" y="342" class="body" font-size="15">One fixed non-executing function tool</text>
