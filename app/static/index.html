@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>ProofStitch: Evidence before action</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: #f5f7ff;
+        --muted: #99a3bd;
+        --panel: rgba(15, 20, 35, 0.78);
+        --line: rgba(179, 194, 255, 0.16);
+        --violet: #9a7cff;
+        --cyan: #4ce5d5;
+        --amber: #ffc76a;
+        --red: #ff758f;
+        --green: #74efb5;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 18% 12%, rgba(120, 88, 255, 0.24), transparent 32rem),
+          radial-gradient(circle at 88% 0%, rgba(76, 229, 213, 0.13), transparent 28rem),
+          #080b14;
+      }
+
+      main { width: min(1180px, calc(100% - 36px)); margin: 0 auto; padding: 46px 0 64px; }
+      nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 58px; }
+      .brand { display: flex; align-items: center; gap: 12px; font-weight: 760; letter-spacing: -0.02em; }
+      .mark { width: 28px; height: 28px; border: 1px solid var(--cyan); border-radius: 9px; position: relative; }
+      .mark::after { content: ""; position: absolute; inset: 6px; border: 1px solid var(--violet); border-radius: 4px; transform: rotate(45deg); }
+      .quiet { color: var(--muted); font-size: 13px; }
+      .hero { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 48px; align-items: end; margin-bottom: 38px; }
+      .eyebrow { color: var(--cyan); font-size: 12px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+      h1 { max-width: 780px; margin: 14px 0 18px; font-size: clamp(45px, 7vw, 86px); line-height: 0.96; letter-spacing: -0.055em; }
+      .lede { max-width: 680px; color: #c4caDC; font-size: 18px; line-height: 1.65; }
+      .hero-note { border-left: 1px solid var(--line); padding-left: 24px; color: var(--muted); line-height: 1.65; }
+      .hero-note strong { display: block; color: var(--ink); margin-bottom: 7px; }
+
+      .shell { border: 1px solid var(--line); border-radius: 24px; overflow: hidden; background: var(--panel); box-shadow: 0 34px 90px rgba(0,0,0,.35); backdrop-filter: blur(18px); }
+      .shell-head { display: flex; justify-content: space-between; align-items: center; padding: 19px 22px; border-bottom: 1px solid var(--line); }
+      .run { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+      .badge { padding: 7px 11px; border-radius: 999px; font-size: 11px; font-weight: 850; letter-spacing: .08em; }
+      .badge.blocked { color: var(--red); background: rgba(255,117,143,.11); }
+      .badge.awaiting { color: var(--amber); background: rgba(255,199,106,.11); }
+      .badge.ready { color: var(--green); background: rgba(116,239,181,.11); }
+      .grid { display: grid; grid-template-columns: .75fr 1.25fr; }
+      .summary { padding: 28px; border-right: 1px solid var(--line); }
+      .proofs { padding: 28px; }
+      .metric { margin-bottom: 28px; }
+      .metric-label { color: var(--muted); font-size: 12px; margin-bottom: 9px; }
+      .metric-value { font-size: 42px; line-height: 1; letter-spacing: -.04em; }
+      .bar { height: 6px; background: rgba(255,255,255,.07); border-radius: 99px; overflow: hidden; margin-top: 13px; }
+      .bar > span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--violet), var(--cyan)); transition: width .5s ease; }
+      .fingerprint { overflow-wrap: anywhere; color: var(--muted); font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      h2 { margin: 0 0 18px; font-size: 14px; letter-spacing: .03em; }
+      .proof-list { display: grid; gap: 10px; }
+      .proof { display: grid; grid-template-columns: 12px 1fr auto; gap: 12px; align-items: center; padding: 14px 15px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.025); }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 14px currentColor; }
+      .proof.ok .dot { background: var(--green); }
+      .proof-name { font-size: 13px; }
+      .proof-meta { color: var(--muted); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .finding { margin-top: 18px; padding: 14px 16px; border-left: 2px solid var(--amber); background: rgba(255,199,106,.06); color: #d8dcef; font-size: 13px; line-height: 1.55; }
+      .panel-section + .panel-section { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--line); }
+      .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+      .timeline { display: grid; gap: 9px; }
+      .step { display: grid; grid-template-columns: 25px 1fr auto; gap: 11px; align-items: start; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.02); }
+      .step-index { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #07110f; background: var(--green); font-size: 10px; font-weight: 850; }
+      .step.waiting .step-index { color: #171006; background: var(--amber); }
+      .step-label { font-size: 12px; font-weight: 760; }
+      .step-detail { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+      .step-state { color: var(--muted); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .06em; }
+      .timeline-empty { padding: 14px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+      .receipt { margin-top: 11px; padding: 12px 14px; border-radius: 12px; background: rgba(76,229,213,.06); color: #b8ded9; font: 10px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+      [hidden] { display: none !important; }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; padding: 20px 22px; border-top: 1px solid var(--line); }
+      .operator-token { min-width: 230px; flex: 1 1 230px; border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px; color: var(--ink); background: rgba(255,255,255,.03); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .operator-token::placeholder { color: var(--muted); }
+      .operator-token:focus { outline: 1px solid var(--cyan); border-color: var(--cyan); }
+      button { appearance: none; border: 1px solid var(--line); border-radius: 11px; padding: 11px 15px; color: var(--ink); background: rgba(255,255,255,.04); font: inherit; font-size: 13px; cursor: pointer; }
+      button.primary { color: #08100e; border-color: transparent; background: var(--cyan); font-weight: 800; }
+      button:disabled { opacity: .38; cursor: not-allowed; }
+      .foot { display: flex; justify-content: space-between; gap: 24px; margin-top: 20px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+      @media (max-width: 760px) {
+        main { width: min(100% - 22px, 1180px); padding-top: 24px; }
+        nav { align-items: flex-start; flex-direction: column; gap: 8px; margin-bottom: 38px; }
+        .hero, .grid { grid-template-columns: 1fr; }
+        .hero { gap: 18px; }
+        .hero-note { border-left: 0; border-top: 1px solid var(--line); padding: 18px 0 0; }
+        .summary { border-right: 0; border-bottom: 1px solid var(--line); }
+        .foot { flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav>
+        <div class="brand"><span class="mark" aria-hidden="true"></span>ProofStitch</div>
+        <div class="quiet">One-click workflow · synthetic evidence</div>
+      </nav>
+
+      <section class="hero">
+        <div>
+          <div class="eyebrow">Autonomous release steward</div>
+          <h1>Ship the proof,<br />not the promise.</h1>
+          <p class="lede">ProofStitch maps every release claim to fresh, immutable evidence. It catches drift and private data, then stops at the exact boundary where a human must decide.</p>
+        </div>
+        <div class="hero-note"><strong>Live synthetic workflow</strong>One click performs the full evidence audit, stores a portable receipt, and stops before any external action.</div>
+      </section>
+
+      <section class="shell" aria-live="polite">
+        <header class="shell-head">
+          <span class="run" id="run-id">run / loading</span>
+          <span class="badge blocked" id="status">LOADING</span>
+        </header>
+        <div class="grid">
+          <aside class="summary">
+            <div class="metric">
+              <div class="metric-label">MANDATORY PROOF COVERAGE</div>
+              <div class="metric-value" id="coverage">0%</div>
+              <div class="bar"><span id="coverage-bar"></span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">VERIFIED REQUIREMENTS</div>
+              <div class="metric-value"><span id="verified">0</span><span class="quiet"> / <span id="total">0</span></span></div>
+            </div>
+            <div class="metric-label">EVIDENCE CONTRACT</div>
+            <div class="fingerprint" id="fingerprint">-</div>
+          </aside>
+          <div class="proofs">
+            <section class="panel-section">
+              <h2>Proof map</h2>
+              <div class="proof-list" id="proof-list"></div>
+              <div class="finding" id="finding">Loading deterministic gate…</div>
+            </section>
+            <section class="panel-section">
+              <div class="section-head">
+                <h2>Agent action timeline</h2>
+                <span class="proof-meta" id="timeline-count">NOT STARTED</span>
+              </div>
+              <div class="timeline" id="timeline">
+                <div class="timeline-empty">Run the audit to see every autonomous action and the exact point where human authority is required.</div>
+              </div>
+              <div class="receipt" id="receipt" hidden></div>
+            </section>
+          </div>
+        </div>
+        <div class="actions">
+          <input class="operator-token" id="operator-token" type="password" inputmode="text" maxlength="64" pattern="[0-9a-f]{64}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="Cloud operator capability" placeholder="Cloud operator token · local demo: blank" />
+          <button id="reset">Reset audit</button>
+          <button class="primary" id="advance">Run autonomous audit</button>
+        </div>
+      </section>
+
+      <div class="foot">
+        <span>Gemini + Google ADK for reasoning · deterministic Python gate for authority</span>
+        <span>External action executed: <strong>False</strong></span>
+      </div>
+    </main>
+
+    <script>
+      let stage = 0;
+      let workflowRunId = null;
+      const status = document.querySelector('#status');
+      const advance = document.querySelector('#advance');
+      const operatorToken = document.querySelector('#operator-token');
+
+      function workflowPostOptions() {
+        const headers = { 'X-ProofStitch-Workflow-Intent': 'fixed-synthetic-workflow' };
+        const token = operatorToken.value.trim();
+        if (token) headers['X-ProofStitch-Demo-Token'] = token;
+        return { method: 'POST', headers };
+      }
+
+      function renderProofs(packet) {
+        const list = document.querySelector('#proof-list');
+        const verifiedIds = new Set(packet.evidence.filter(item => item.status === 'passed').map(item => item.requirement_id));
+        const nodes = packet.requirements.map(item => {
+          const row = document.createElement('div');
+          row.className = `proof ${verifiedIds.has(item.id) ? 'ok' : ''}`;
+          const dot = document.createElement('span');
+          dot.className = 'dot';
+          dot.setAttribute('aria-hidden', 'true');
+          const name = document.createElement('span');
+          name.className = 'proof-name';
+          name.textContent = item.text;
+          const meta = document.createElement('span');
+          meta.className = 'proof-meta';
+          meta.textContent = verifiedIds.has(item.id) ? 'VERIFIED' : 'MISSING';
+          row.append(dot, name, meta);
+          return row;
+        });
+        list.replaceChildren(...nodes);
+      }
+
+      function renderTimeline(actions = []) {
+        const timeline = document.querySelector('#timeline');
+        const count = document.querySelector('#timeline-count');
+        if (!actions.length) {
+          const empty = document.createElement('div');
+          empty.className = 'timeline-empty';
+          empty.textContent = 'Run the audit to see every autonomous action and the exact point where human authority is required.';
+          timeline.replaceChildren(empty);
+          count.textContent = 'NOT STARTED';
+          return;
+        }
+        const nodes = actions.map((item, index) => {
+          const row = document.createElement('div');
+          row.className = `step ${item.status}`;
+          const number = document.createElement('span');
+          number.className = 'step-index';
+          number.textContent = String(index + 1);
+          const body = document.createElement('div');
+          const label = document.createElement('div');
+          label.className = 'step-label';
+          label.textContent = item.label;
+          const detail = document.createElement('div');
+          detail.className = 'step-detail';
+          detail.textContent = item.detail;
+          body.append(label, detail);
+          const state = document.createElement('span');
+          state.className = 'step-state';
+          state.textContent = item.status.toUpperCase();
+          row.append(number, body, state);
+          return row;
+        });
+        timeline.replaceChildren(...nodes);
+        count.textContent = `${actions.length} ACTIONS`;
+      }
+
+      function renderReceipt(receipt) {
+        const node = document.querySelector('#receipt');
+        if (!receipt) {
+          node.hidden = true;
+          node.textContent = '';
+          return;
+        }
+        node.hidden = false;
+        node.textContent = `RECEIPT ${receipt.receipt_sha256} · DECISION ${receipt.decision} · EXTERNAL ACTION FALSE`;
+      }
+
+      function renderState(data) {
+        const report = data.report;
+        const packet = data.packet;
+        document.querySelector('#run-id').textContent = `run / ${report.run_id}`;
+        status.textContent = report.status.replaceAll('_', ' ');
+        status.className = `badge ${report.status === 'BLOCKED' ? 'blocked' : report.status === 'AWAITING_APPROVAL' ? 'awaiting' : 'ready'}`;
+        const percentage = Math.round(report.coverage * 100);
+        document.querySelector('#coverage').textContent = `${percentage}%`;
+        document.querySelector('#coverage-bar').style.width = `${percentage}%`;
+        document.querySelector('#verified').textContent = report.verified_requirements;
+        document.querySelector('#total').textContent = report.mandatory_requirements;
+        document.querySelector('#fingerprint').textContent = report.packet_fingerprint;
+        renderProofs(packet);
+        renderTimeline(data.actions);
+        renderReceipt(data.receipt);
+        const first = report.findings[0];
+        document.querySelector('#finding').textContent = first
+          ? `${first.code}: ${first.message}`
+          : (report.next_actions[0] || 'All evidence is valid. The external action remains with the human operator.');
+        advance.disabled = stage >= 2;
+        advance.textContent = stage === 0 ? 'Run autonomous audit' : stage === 1 ? 'Record synthetic human approval' : 'Ready for human action';
+      }
+
+      async function requestJson(url, options = {}) {
+        const response = await fetch(url, options);
+        if (!response.ok) throw new Error(`Request failed (${response.status})`);
+        return response.json();
+      }
+
+      async function loadInitialState() {
+        stage = 0;
+        workflowRunId = null;
+        const data = await requestJson('/api/v1/demo/0');
+        renderState(data);
+      }
+
+      async function advanceWorkflow() {
+        advance.disabled = true;
+        advance.setAttribute('aria-busy', 'true');
+        try {
+          if (stage === 0) {
+            const data = await requestJson('/api/v1/workflows/demo', workflowPostOptions());
+            workflowRunId = data.run_id;
+            stage = 1;
+            renderState(data);
+          } else if (stage === 1 && workflowRunId) {
+            const data = await requestJson(`/api/v1/workflows/${encodeURIComponent(workflowRunId)}/synthetic-approval`, workflowPostOptions());
+            stage = 2;
+            renderState(data);
+            operatorToken.value = '';
+          }
+        } catch (error) {
+          document.querySelector('#finding').textContent = `Workflow unavailable: ${error.message}`;
+        } finally {
+          advance.removeAttribute('aria-busy');
+          advance.disabled = stage >= 2;
+        }
+      }
+
+      advance.addEventListener('click', advanceWorkflow);
+      document.querySelector('#reset').addEventListener('click', () => {
+        operatorToken.value = '';
+        loadInitialState().catch(showLoadError);
+      });
+      function showLoadError(error) {
+        document.querySelector('#finding').textContent = `Demo unavailable: ${error.message}`;
+      }
+      loadInitialState().catch(showLoadError);
+    </script>
+  </body>
+</html>

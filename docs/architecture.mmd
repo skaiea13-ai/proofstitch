@@ -1,0 +1,15 @@
+flowchart LR
+    U[Authenticated operator] -->|Cloud Run IAM| C[Private Cloud Run service]
+    C --> D[Dashboard and bounded REST API]
+    D --> W[Server-built synthetic workflow]
+    D -->|Fixed prompt only| A[Google ADK Runner]
+    A --> G[Gemini 3.6 Flash on Vertex AI]
+    A --> T[One fixed non-executing tool]
+    W --> E[Trusted synthetic evidence collector]
+    X[Caller-supplied packet] -->|Evidence untrusted by default| H
+    E --> H{Deterministic Python gate}
+    H --> R[SHA-256 receipt and bounded TTL store]
+    H -- Missing, untrusted, or invalid --> B[BLOCKED]
+    H -- Exact approval missing --> P[AWAITING_APPROVAL]
+    H -- Fingerprint-bound scope matches --> Q[READY_FOR_HUMAN_ACTION]
+    Q -. Human-only boundary .-> O[Human operator]

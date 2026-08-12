@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.playwright-mcp
+__pycache__
+*.py[cod]
+*.egg-info
+.DS_Store
+dist
+docs
+submission
+tests
