@@ -555,12 +555,24 @@ def test_private_deploy_rejects_anonymous_application_response(
     assert "run services update" not in gcloud_calls
 
 
+def test_private_deploy_retries_transient_anonymous_route_response(
+    tmp_path: Path,
+) -> None:
+    result, _, curl_calls = _run_deploy(
+        tmp_path,
+        anonymous_http_codes="404,403,403",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert curl_calls.count("https://proofstitch.example.invalid/healthz") == 3
+
+
 def test_private_deploy_cleans_up_if_post_activation_probe_is_public(
     tmp_path: Path,
 ) -> None:
     result, gcloud_calls, _ = _run_deploy(
         tmp_path,
-        anonymous_http_codes="403,200",
+        anonymous_http_codes="403,200,200",
     )
 
     assert result.returncode == 3
@@ -580,7 +592,7 @@ def test_private_deploy_retains_fallback_when_service_absence_is_unconfirmed(
 ) -> None:
     result, gcloud_calls, _ = _run_deploy(
         tmp_path,
-        anonymous_http_codes="403,200",
+        anonymous_http_codes="403,200,200",
         service_delete_fail=True,
     )
 
@@ -597,7 +609,7 @@ def test_private_deploy_retains_fallback_when_service_state_is_unknown(
 ) -> None:
     result, gcloud_calls, _ = _run_deploy(
         tmp_path,
-        anonymous_http_codes="403,200",
+        anonymous_http_codes="403,200,200",
         service_delete_fail=True,
         service_list_fail_after_delete=True,
     )

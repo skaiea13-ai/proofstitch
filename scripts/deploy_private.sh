@@ -442,6 +442,30 @@ require_effective_permission() {
   return 1
 }
 
+require_anonymous_denial() {
+  local attempt
+  local http_code
+
+  for ((attempt = 1; attempt <= iam_poll_attempts; attempt++)); do
+    if http_code="$(curl \
+      --silent \
+      --show-error \
+      --output /dev/null \
+      --write-out '%{http_code}' \
+      --connect-timeout 10 \
+      --max-time 20 \
+      "${service_url}/healthz")" &&
+      { [[ "${http_code}" == "401" ]] || [[ "${http_code}" == "403" ]]; }; then
+      return 0
+    fi
+    if [[ "${attempt}" -lt "${iam_poll_attempts}" ]]; then
+      sleep "${iam_poll_interval_seconds}"
+    fi
+  done
+
+  return 1
+}
+
 if ! require_effective_permission \
   "${cleanup_service_account}" \
   "${service_resource}" \
@@ -470,15 +494,7 @@ if ! require_effective_permission \
   exit 3
 fi
 
-anonymous_http_code="$(curl \
-  --silent \
-  --show-error \
-  --output /dev/null \
-  --write-out '%{http_code}' \
-  --connect-timeout 10 \
-  --max-time 20 \
-  "${service_url}/healthz")"
-if [[ "${anonymous_http_code}" != "401" && "${anonymous_http_code}" != "403" ]]; then
+if ! require_anonymous_denial; then
   echo "Refusing deployment result: an anonymous request reached the Cloud Run application." >&2
   exit 3
 fi
@@ -533,15 +549,7 @@ gcloud run services update "${service_name}" \
   --update-env-vars="PROOFSTITCH_MODEL_DEMO_TOKEN_SHA256=${model_demo_token_sha256},PROOFSTITCH_MODEL_DEMO_NOT_BEFORE=${model_demo_not_before},PROOFSTITCH_MODEL_DEMO_EXPIRES_AT=${deadline_epoch}" \
   --quiet >/dev/null
 
-anonymous_http_code="$(curl \
-  --silent \
-  --show-error \
-  --output /dev/null \
-  --write-out '%{http_code}' \
-  --connect-timeout 10 \
-  --max-time 20 \
-  "${service_url}/healthz")"
-if [[ "${anonymous_http_code}" != "401" && "${anonymous_http_code}" != "403" ]]; then
+if ! require_anonymous_denial; then
   echo "Refusing deployment result: the activated service is anonymously reachable." >&2
   exit 3
 fi
