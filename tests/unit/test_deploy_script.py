@@ -436,7 +436,7 @@ def test_private_deploy_establishes_bounded_private_lifecycle(tmp_path: Path) ->
         re.findall(r"PROOFSTITCH_MODEL_DEMO_EXPIRES_AT=(\d+)", gcloud_calls)[-1]
     )
     assert 0 < expires_at - not_before <= 10 * 60
-    assert curl_calls.count("https://proofstitch.example.invalid/healthz") == 2
+    assert curl_calls.count("https://proofstitch.example.invalid/") == 2
     assert "one-shot deletion scheduled" in result.stdout
     assert "cleanup_private.sh immediately after recording" in result.stdout
 
@@ -564,7 +564,7 @@ def test_private_deploy_retries_transient_anonymous_route_response(
     )
 
     assert result.returncode == 0, result.stderr
-    assert curl_calls.count("https://proofstitch.example.invalid/healthz") == 3
+    assert curl_calls.count("https://proofstitch.example.invalid/") == 3
 
 
 def test_private_deploy_cleans_up_if_post_activation_probe_is_public(

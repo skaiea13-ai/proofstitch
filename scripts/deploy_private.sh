@@ -454,7 +454,7 @@ require_anonymous_denial() {
       --write-out '%{http_code}' \
       --connect-timeout 10 \
       --max-time 20 \
-      "${service_url}/healthz")" &&
+      "${service_url}/")" &&
       { [[ "${http_code}" == "401" ]] || [[ "${http_code}" == "403" ]]; }; then
       return 0
     fi
