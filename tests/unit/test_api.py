@@ -63,6 +63,8 @@ def test_dashboard_is_served() -> None:
 
     assert response.status_code == 200
     assert "Ship the proof" in response.text
+    assert "Run fixed reasoning pass" in response.text
+    assert "fixed-synthetic-demo" in response.text
     assert 'type="password"' in response.text
     assert "X-ProofStitch-Demo-Token" in response.text
     assert "localStorage" not in response.text
