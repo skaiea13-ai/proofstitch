@@ -381,7 +381,6 @@ for anonymous_identity in allUsers allAuthenticatedUsers; do
     | keyed("nonCriticalErrors") as $errors
     | ($explored | length) > 0
       and all($explored[]; . == true)
-      and ($results | length) > 0
       and all($results[]; type == "array" and length == 0)
       and all($errors[]; type == "array" and length == 0)
   ' >/dev/null <<<"${analysis_json}"; then

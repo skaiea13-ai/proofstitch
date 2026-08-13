@@ -505,6 +505,21 @@ def test_private_deploy_rejects_incomplete_iam_analysis(tmp_path: Path) -> None:
     assert "run services update" not in gcloud_calls
 
 
+def test_private_deploy_accepts_omitted_empty_iam_result_arrays(
+    tmp_path: Path,
+) -> None:
+    result, gcloud_calls, _ = _run_deploy(
+        tmp_path,
+        analysis_json=(
+            '{"fullyExplored":true,"mainAnalysis":{"fullyExplored":true}}'
+        ),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert gcloud_calls.count("asset analyze-iam-policy") == 2
+    assert "run services update" in gcloud_calls
+
+
 @pytest.mark.parametrize("anonymous_code", ["200", "503"])
 def test_private_deploy_rejects_anonymous_application_response(
     tmp_path: Path,
