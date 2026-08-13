@@ -415,6 +415,7 @@ def test_private_deploy_establishes_bounded_private_lifecycle(tmp_path: Path) ->
     assert "--oauth-token-scope=https://www.googleapis.com/auth/cloud-platform" in gcloud_calls
     assert gcloud_calls.count("asset analyze-iam-policy") == 2
     assert gcloud_calls.count("policy-intelligence troubleshoot-policy") == 4
+    assert gcloud_calls.count("--billing-project=proofstitch-security-test") == 5
     assert "beta policy-intelligence troubleshoot-policy" not in gcloud_calls
     assert "--identity=allUsers" in gcloud_calls
     assert "--identity=allAuthenticatedUsers" in gcloud_calls

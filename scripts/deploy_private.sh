@@ -369,6 +369,7 @@ for anonymous_identity in allUsers allAuthenticatedUsers; do
   for ((attempt = 1; attempt <= iam_poll_attempts; attempt++)); do
     if analysis_json="$(gcloud asset analyze-iam-policy \
       "${analyzer_scope}" \
+      --billing-project="${PROOFSTITCH_PROJECT_ID}" \
       --full-resource-name="${service_resource}" \
       --identity="${anonymous_identity}" \
       --permissions=run.routes.invoke \
@@ -421,6 +422,7 @@ require_effective_permission() {
     if troubleshoot_json="$(CLOUDSDK_CORE_DISABLE_PROMPTS=1 \
       "${troubleshooter_command[@]}" policy-intelligence troubleshoot-policy iam "${resource}" \
       --project="${PROOFSTITCH_PROJECT_ID}" \
+      --billing-project="${PROOFSTITCH_PROJECT_ID}" \
       --principal-email="${principal_email}" \
       --permission="${permission}" \
       --resource-name="${condition_resource_name}" \
