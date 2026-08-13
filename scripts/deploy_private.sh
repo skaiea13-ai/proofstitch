@@ -91,10 +91,9 @@ for required_command in gcloud openssl jq curl; do
   fi
 done
 if ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 \
-  gcloud beta policy-intelligence troubleshoot-policy iam --help \
+  gcloud policy-intelligence troubleshoot-policy iam --help \
   >/dev/null 2>&1; then
-  echo "Refusing deployment: install the official Google Cloud CLI beta component for effective IAM checks." >&2
-  echo "Run: gcloud components install beta" >&2
+  echo "Refusing deployment: install a Google Cloud CLI version with Policy Troubleshooter support." >&2
   exit 2
 fi
 
@@ -347,8 +346,17 @@ if ! jq -e 'type == "array"' >/dev/null <<<"${ancestors_json}"; then
 fi
 organization_id="$(jq -r '[.[] | select(.type == "organization") | .id][0] // empty' <<<"${ancestors_json}")"
 folder_count="$(jq '[.[] | select(.type == "folder")] | length' <<<"${ancestors_json}")"
+troubleshooter_command=(gcloud)
 if [[ -n "${organization_id}" ]]; then
   analyzer_scope="--organization=${organization_id}"
+  if ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 \
+    gcloud beta policy-intelligence troubleshoot-policy iam --help \
+    >/dev/null 2>&1; then
+    echo "Refusing deployment: install the official Google Cloud CLI beta component for principal access boundary checks." >&2
+    echo "Run: gcloud components install beta" >&2
+    exit 3
+  fi
+  troubleshooter_command+=(beta)
 elif [[ "${folder_count}" -gt 0 ]]; then
   echo "Refusing deployment result: the full inherited IAM hierarchy could not be selected." >&2
   exit 3
@@ -390,17 +398,24 @@ require_effective_permission() {
   local resource_type="$5"
   local description="$6"
   local attempt
+  local condition_resource_name
   local request_time
   local troubleshoot_json
+
+  condition_resource_name="${resource#//${resource_service}/}"
+  if [[ "${condition_resource_name}" == "${resource}" || -z "${condition_resource_name}" ]]; then
+    echo "Refusing deployment result: ${description} used an invalid condition resource name." >&2
+    return 1
+  fi
 
   for ((attempt = 1; attempt <= iam_poll_attempts; attempt++)); do
     request_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     if troubleshoot_json="$(CLOUDSDK_CORE_DISABLE_PROMPTS=1 \
-      gcloud beta policy-intelligence troubleshoot-policy iam "${resource}" \
+      "${troubleshooter_command[@]}" policy-intelligence troubleshoot-policy iam "${resource}" \
       --project="${PROOFSTITCH_PROJECT_ID}" \
       --principal-email="${principal_email}" \
       --permission="${permission}" \
-      --resource-name="${resource}" \
+      --resource-name="${condition_resource_name}" \
       --resource-service="${resource_service}" \
       --resource-type="${resource_type}" \
       --request-time="${request_time}" \

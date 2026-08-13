@@ -118,7 +118,7 @@ case "${1:-} ${2:-} ${3:-}" in
       exit 64
     fi
     ;;
-  "beta policy-intelligence troubleshoot-policy")
+  "policy-intelligence troubleshoot-policy iam"|"beta policy-intelligence troubleshoot-policy")
     if [[ "$*" == *"--help"* ]]; then
       exit 0
     elif [[ "$*" == *"--permission=run.services.delete"* ]]; then
@@ -248,6 +248,7 @@ def _run_deploy(
     secret_version_describe_fail: bool = False,
     secret_version_state: str = "ENABLED",
     exported_internal_names: bool = False,
+    ancestors_json: str = "",
 ) -> tuple[subprocess.CompletedProcess[str], str, str]:
     fake_gcloud = tmp_path / "gcloud"
     fake_gcloud.write_text(_FAKE_GCLOUD, encoding="utf-8")
@@ -297,6 +298,7 @@ def _run_deploy(
             "1" if secret_version_describe_fail else "0"
         ),
         "FAKE_SECRET_VERSION_STATE": secret_version_state,
+        "FAKE_ANCESTORS_JSON": ancestors_json,
         "PROOFSTITCH_CLEANUP_POLL_ATTEMPTS": "2",
         "PROOFSTITCH_CLEANUP_POLL_INTERVAL_SECONDS": "0",
         "PROOFSTITCH_IAM_POLL_ATTEMPTS": "2",
@@ -406,12 +408,18 @@ def test_private_deploy_establishes_bounded_private_lifecycle(tmp_path: Path) ->
     assert "--method=DELETE" in gcloud_calls
     assert "--oauth-token-scope=https://www.googleapis.com/auth/cloud-platform" in gcloud_calls
     assert gcloud_calls.count("asset analyze-iam-policy") == 2
-    assert gcloud_calls.count("beta policy-intelligence troubleshoot-policy") == 4
+    assert gcloud_calls.count("policy-intelligence troubleshoot-policy") == 4
+    assert "beta policy-intelligence troubleshoot-policy" not in gcloud_calls
     assert "--identity=allUsers" in gcloud_calls
     assert "--identity=allAuthenticatedUsers" in gcloud_calls
     assert "--permission=run.services.delete" in gcloud_calls
     assert "--permission=iam.serviceAccounts.actAs" in gcloud_calls
     assert "--permission=iam.serviceAccounts.getAccessToken" in gcloud_calls
+    assert (
+        "--resource-name=projects/proofstitch-security-test/locations/us-central1/"
+        "services/proofstitch"
+    ) in gcloud_calls
+    assert "--resource-name=//run.googleapis.com/" not in gcloud_calls
     assert gcloud_calls.index("tasks create-http-task") < gcloud_calls.index(
         "run services update"
     )
@@ -425,6 +433,22 @@ def test_private_deploy_establishes_bounded_private_lifecycle(tmp_path: Path) ->
     assert curl_calls.count("https://proofstitch.example.invalid/healthz") == 2
     assert "one-shot deletion scheduled" in result.stdout
     assert "cleanup_private.sh immediately after recording" in result.stdout
+
+
+def test_private_deploy_uses_beta_troubleshooter_for_organization_project(
+    tmp_path: Path,
+) -> None:
+    result, gcloud_calls, _ = _run_deploy(
+        tmp_path,
+        ancestors_json=(
+            '[{"type":"project","id":"proofstitch-security-test"},'
+            '{"type":"organization","id":"1234567890"}]'
+        ),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "asset analyze-iam-policy --organization=1234567890" in gcloud_calls
+    assert gcloud_calls.count("beta policy-intelligence troubleshoot-policy") == 4
 
 
 def test_private_deploy_rejects_disabled_invoker_iam_check(tmp_path: Path) -> None:
