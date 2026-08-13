@@ -108,7 +108,10 @@ case "${1:-} ${2:-} ${3:-}" in
     ;;
   "asset analyze-iam-policy --project=proofstitch-security-test"|"asset analyze-iam-policy --organization="*)
     if [[ "$*" == *"--identity=allUsers"* || "$*" == *"--identity=allAuthenticatedUsers"* ]]; then
-      if [[ -n "${FAKE_ANALYSIS_JSON:-}" ]]; then
+      if [[ "${FAKE_ANALYSIS_TRANSIENT_ONCE:-0}" == "1" && ! -f "${FAKE_ANALYSIS_RETRIED:?}" ]]; then
+        : >"${FAKE_ANALYSIS_RETRIED}"
+        printf '%s\n' '{"mainAnalysis":{"fullyExplored":false,"nonCriticalErrors":[{"code":"RESOURCE_NOT_READY"}]}}'
+      elif [[ -n "${FAKE_ANALYSIS_JSON:-}" ]]; then
         printf '%s\n' "${FAKE_ANALYSIS_JSON}"
       else
         printf '%s\n' '{"mainAnalysis":{"analysisResults":[],"fullyExplored":true}}'
@@ -230,6 +233,7 @@ def _run_deploy(
     existing_cleanup_account: str = "",
     existing_cleanup_queue: str = "",
     analysis_json: str = "",
+    analysis_transient_once: bool = False,
     anonymous_http_codes: str = "403,403",
     task_create_fail: bool = False,
     task_describe_invalid: bool = False,
@@ -284,6 +288,8 @@ def _run_deploy(
         "FAKE_EXISTING_CLEANUP_ACCOUNT": existing_cleanup_account,
         "FAKE_EXISTING_CLEANUP_QUEUE": existing_cleanup_queue,
         "FAKE_ANALYSIS_JSON": analysis_json,
+        "FAKE_ANALYSIS_TRANSIENT_ONCE": "1" if analysis_transient_once else "0",
+        "FAKE_ANALYSIS_RETRIED": str(tmp_path / "analysis-retried"),
         "FAKE_CLEANUP_DELETE_TROUBLESHOOT_JSON": cleanup_delete_troubleshoot_json,
         "FAKE_TOKEN_TROUBLESHOOT_JSON": token_troubleshoot_json,
         "FAKE_ANON_HTTP_CODES": anonymous_http_codes,
@@ -517,6 +523,19 @@ def test_private_deploy_accepts_omitted_empty_iam_result_arrays(
 
     assert result.returncode == 0, result.stderr
     assert gcloud_calls.count("asset analyze-iam-policy") == 2
+    assert "run services update" in gcloud_calls
+
+
+def test_private_deploy_retries_transient_incomplete_iam_analysis(
+    tmp_path: Path,
+) -> None:
+    result, gcloud_calls, _ = _run_deploy(
+        tmp_path,
+        analysis_transient_once=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert gcloud_calls.count("asset analyze-iam-policy") == 3
     assert "run services update" in gcloud_calls
 
 

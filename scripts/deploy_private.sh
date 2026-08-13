@@ -365,25 +365,34 @@ else
 fi
 
 for anonymous_identity in allUsers allAuthenticatedUsers; do
-  analysis_json="$(gcloud asset analyze-iam-policy \
-    "${analyzer_scope}" \
-    --full-resource-name="${service_resource}" \
-    --identity="${anonymous_identity}" \
-    --permissions=run.routes.invoke \
-    --expand-resources \
-    --expand-roles \
-    --show-response \
-    --format=json)"
-  if ! jq -e '
-    def keyed($name): [.. | objects | select(has($name)) | .[$name]];
-    keyed("fullyExplored") as $explored
-    | keyed("analysisResults") as $results
-    | keyed("nonCriticalErrors") as $errors
-    | ($explored | length) > 0
-      and all($explored[]; . == true)
-      and all($results[]; type == "array" and length == 0)
-      and all($errors[]; type == "array" and length == 0)
-  ' >/dev/null <<<"${analysis_json}"; then
+  analysis_verified=0
+  for ((attempt = 1; attempt <= iam_poll_attempts; attempt++)); do
+    if analysis_json="$(gcloud asset analyze-iam-policy \
+      "${analyzer_scope}" \
+      --full-resource-name="${service_resource}" \
+      --identity="${anonymous_identity}" \
+      --permissions=run.routes.invoke \
+      --expand-resources \
+      --expand-roles \
+      --show-response \
+      --format=json)" && jq -e '
+      def keyed($name): [.. | objects | select(has($name)) | .[$name]];
+      keyed("fullyExplored") as $explored
+      | keyed("analysisResults") as $results
+      | keyed("nonCriticalErrors") as $errors
+      | ($explored | length) > 0
+        and all($explored[]; . == true)
+        and all($results[]; type == "array" and length == 0)
+        and all($errors[]; type == "array" and length == 0)
+    ' >/dev/null <<<"${analysis_json}"; then
+      analysis_verified=1
+      break
+    fi
+    if [[ "${attempt}" -lt "${iam_poll_attempts}" ]]; then
+      sleep "${iam_poll_interval_seconds}"
+    fi
+  done
+  if [[ "${analysis_verified}" -ne 1 ]]; then
     echo "Refusing deployment result: effective inherited IAM is public or incompletely analyzed." >&2
     exit 3
   fi
